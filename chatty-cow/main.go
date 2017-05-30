@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"os"
 
+	"math/rand"
+	"time"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/rancher/stress-tests/chatty-cow/moo"
 	"github.com/urfave/cli"
@@ -21,8 +24,23 @@ func main() {
 }
 
 func run(c *cli.Context) error {
+	rand.Seed(time.Now().UnixNano())
+
 	mooInterval := c.Int64("moo-interval")
-	cow, err := moo.CreateCow(mooInterval)
+	if mooInterval == 0 {
+		mooInterval = 1
+	}
+
+	if c.Bool("debug") {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	herd := c.String("herd")
+	if herd == "" {
+		herd = "chatty-cow"
+	}
+
+	cow, err := moo.CreateCow(herd, mooInterval)
 	if err != nil {
 		logrus.Fatalf("Unrecoverable error: %v", err)
 	}
@@ -33,9 +51,7 @@ func run(c *cli.Context) error {
 
 	http.HandleFunc("/healthcheck", s.healthcheck)
 	http.HandleFunc("/moo", s.mooHandler)
-	if err := http.ListenAndServe(":80", nil); err != nil {
-		logrus.Fatalf("Error in http server %v", err)
-	}
+	go http.ListenAndServe(":80", nil)
 
 	err = cow.StartMooing()
 	return err
@@ -51,8 +67,11 @@ func (s *server) mooHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) healthcheck(w http.ResponseWriter, r *http.Request) {
 	if s.cow.IsHappyCow() {
+		logrus.Infof("Healthcheck reply 200")
 		w.WriteHeader(200)
+		return
 	}
 
+	logrus.Infof("Healthcheck reply 500")
 	w.WriteHeader(500)
 }

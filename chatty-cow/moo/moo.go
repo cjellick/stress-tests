@@ -17,12 +17,14 @@ const (
 	mooURL = "http://%v/moo"
 )
 
-func CreateCow(mooInterval int64) (*Mooer, error) {
+func CreateCow(herd string, mooInterval int64) (*Mooer, error) {
+	logrus.Infof("Creating cow")
 	client, err := metadata.NewClientAndWait(mdURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "Couldn't create metadata client")
 	}
 	return &Mooer{
+		herd:     herd,
 		interval: mooInterval,
 		client:   client,
 	}, nil
@@ -41,6 +43,7 @@ func (m *Mooer) IsHappyCow() bool {
 }
 
 func (m *Mooer) StartMooing() error {
+	logrus.Infof("Starting moo")
 	var otherCow metadata.Container
 	me, err := m.client.GetSelfContainer()
 	if err != nil {
@@ -48,33 +51,48 @@ func (m *Mooer) StartMooing() error {
 	}
 
 	for {
+		time.Sleep(time.Second * time.Duration(m.interval))
+
 		otherContainers, err := m.client.GetContainers()
 		if err != nil {
 			logrus.Errorf("Couldn't get containers %v", err)
 			m.lastMoo = false
 		}
 
-		for {
-			otherCow = otherContainers[rand.Int()%len(otherContainers)]
+		length := len(otherContainers)
+		if length == 0 {
+			continue
+		}
+
+		found := false
+		for i := 0; i < 10; i++ {
+			otherCow = otherContainers[rand.Int()%length]
 			if strings.Contains(otherCow.Name, m.herd) && otherCow.Name != me.Name {
+				found = true
 				break
 			}
 		}
 
-		url := fmt.Sprintf(mooURL, otherCow.PrimaryIp)
+		if !found {
+			continue
+		}
+
+		url := fmt.Sprintf(mooURL, otherCow.Name)
+		logrus.Debugf("Mooing at %v", url)
 		r, err := http.Get(url)
 		if err != nil {
 			logrus.Errorf("Couldn't hear other cow moo: %v", err)
 			m.lastMoo = false
+			continue
 		}
 
+		logrus.Debugf("Got response moo %v", r.StatusCode)
 		if r.StatusCode >= 300 {
 			logrus.Errorf("Bad response from other cow: %v %v", otherCow.PrimaryIp, r.StatusCode)
 			m.lastMoo = false
+			continue
 		}
 
 		m.lastMoo = true
-
-		time.Sleep(time.Second * time.Duration(m.interval))
 	}
 }
