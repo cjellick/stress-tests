@@ -1,0 +1,6 @@
+version: '2'
+services:
+  chatty-cow:
+    image: cjellick/chatty-cow:dev
+    labels:
+      io.rancher.container.pull_image: always
